@@ -7,6 +7,7 @@ import com.PeopleStrong.ExitModule.model.enums.RequestStatus;
 import com.PeopleStrong.ExitModule.dto.ApprovalRequestDto;
 import com.PeopleStrong.ExitModule.dto.CreateExitRequestDto;
 import com.PeopleStrong.ExitModule.dto.ExitRequestDto;
+import com.PeopleStrong.ExitModule.dto.AuditHistoryDto;
 import com.PeopleStrong.ExitModule.model.ItChecklist;
 import com.PeopleStrong.ExitModule.model.enums.ChecklistStatus;
 import com.PeopleStrong.ExitModule.exception.CooldownActiveException;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -39,7 +41,8 @@ public class ExitRequestService {
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
 
         if (employee.getCooldownUntil() != null && employee.getCooldownUntil().isAfter(LocalDate.now())) {
-            throw new CooldownActiveException("Cannot submit request. Cooldown active until " + employee.getCooldownUntil());
+            throw new CooldownActiveException(
+                    "Cannot submit request. Cooldown active until " + employee.getCooldownUntil());
         }
 
         // Check if there's already an active request
@@ -67,14 +70,21 @@ public class ExitRequestService {
         Employee employee = employeeRepository.findByEmail(userEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee not found"));
         return exitRequestRepository.findByEmployee_EmpId(employee.getEmpId())
-                .stream().map(this::mapToDto).collect(Collectors.toList());
+                .stream()
+                .sorted(Comparator.comparing(ExitRequest::getRequestId, Comparator.reverseOrder()))
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
     public List<ExitRequestDto> getRequestsForL1(String managerEmail) {
         Employee manager = employeeRepository.findByEmail(managerEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("Manager not found"));
         return exitRequestRepository.findByEmployee_L1Manager_EmpId(manager.getEmpId())
-                .stream().map(this::mapToDto).collect(Collectors.toList());
+                .stream()
+                .sorted(Comparator.comparing((ExitRequest r) -> r.getStatus() == RequestStatus.PENDING_L1 ? 0 : 1)
+                        .thenComparing(ExitRequest::getRequestId, Comparator.reverseOrder()))
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -85,7 +95,7 @@ public class ExitRequestService {
         }
         request.setStatus(RequestStatus.PENDING_HR);
         exitRequestRepository.save(request);
-        
+
         Employee manager = employeeRepository.findByEmail(managerEmail).get();
         logAudit(request, manager, "APPROVED_L1", "L1 Manager approved");
         return mapToDto(request);
@@ -111,7 +121,11 @@ public class ExitRequestService {
         Employee hrManager = employeeRepository.findByEmail(hrEmail)
                 .orElseThrow(() -> new ResourceNotFoundException("HR not found"));
         return exitRequestRepository.findByEmployee_HrManager_EmpId(hrManager.getEmpId())
-                .stream().map(this::mapToDto).collect(Collectors.toList());
+                .stream()
+                .sorted(Comparator.comparing((ExitRequest r) -> r.getStatus() == RequestStatus.PENDING_HR ? 0 : 1)
+                        .thenComparing(ExitRequest::getRequestId, Comparator.reverseOrder()))
+                .map(this::mapToDto)
+                .collect(Collectors.toList());
     }
 
     @Transactional
@@ -132,7 +146,7 @@ public class ExitRequestService {
 
         Employee hrManager = employeeRepository.findByEmail(hrEmail).get();
         logAudit(request, hrManager, "APPROVED_HR", "HR Manager approved. Pending IT checklist.");
-        
+
         return mapToDto(request);
     }
 
@@ -163,15 +177,17 @@ public class ExitRequestService {
     private ExitRequest getAndValidateRequestForManager(String email, Long requestId, boolean isL1) {
         ExitRequest request = exitRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException("Exit Request not found"));
-        
+
         Employee manager = employeeRepository.findByEmail(email).get(); // Auth guarantees this exists
-        
+
         if (isL1) {
-            if (request.getEmployee().getL1Manager() == null || !request.getEmployee().getL1Manager().getEmpId().equals(manager.getEmpId())) {
+            if (request.getEmployee().getL1Manager() == null
+                    || !request.getEmployee().getL1Manager().getEmpId().equals(manager.getEmpId())) {
                 throw new InvalidStateTransitionException("You are not the L1 Manager for this employee.");
             }
         } else {
-            if (request.getEmployee().getHrManager() == null || !request.getEmployee().getHrManager().getEmpId().equals(manager.getEmpId())) {
+            if (request.getEmployee().getHrManager() == null
+                    || !request.getEmployee().getHrManager().getEmpId().equals(manager.getEmpId())) {
                 throw new InvalidStateTransitionException("You are not the HR Manager for this employee.");
             }
         }
@@ -188,6 +204,22 @@ public class ExitRequestService {
                 .status(exitRequest.getStatus())
                 .rejectionReason(exitRequest.getRejectionReason())
                 .build();
+    }
+
+    public List<AuditHistoryDto> getAuditHistoryById(Long requestId) {
+        ExitRequest request = exitRequestRepository.findById(requestId)
+                .orElseThrow(() -> new ResourceNotFoundException("Exit Request not found"));
+
+        return auditLogRepository.findByExitRequest_RequestIdOrderByTimestampDesc(requestId)
+                .stream()
+                .map(log -> AuditHistoryDto.builder()
+                        .actorId(log.getActor() != null ? log.getActor().getEmpId() : null)
+                        .actorName(log.getActor() != null ? log.getActor().getName() : "System")
+                        .action(log.getAction())
+                        .comments(log.getComments())
+                        .timestamp(log.getTimestamp())
+                        .build())
+                .collect(Collectors.toList());
     }
 
     private void logAudit(ExitRequest request, Employee actor, String action, String comments) {
