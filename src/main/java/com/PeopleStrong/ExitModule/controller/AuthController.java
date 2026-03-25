@@ -1,5 +1,7 @@
 package com.PeopleStrong.ExitModule.controller;
 
+import com.PeopleStrong.ExitModule.common.AuthMessages;
+import com.PeopleStrong.ExitModule.common.GeneralMessages;
 import com.PeopleStrong.ExitModule.dto.ApiResponse;
 import com.PeopleStrong.ExitModule.dto.AuthRequestDto;
 import com.PeopleStrong.ExitModule.dto.AuthResponseDto;
@@ -28,11 +30,11 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponseDto>> signup(@Valid @RequestBody SignupRequestDto request) {
         try {
             AuthResponseDto response = authService.signup(request);
-            return okResponse(response, "User registered successfully");
+            return okResponse(response, AuthMessages.USER_REGISTERED_SUCCESSFULLY);
         } catch (RuntimeException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred: " + e.getMessage());
+            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, GeneralMessages.UNEXPECTED_ERROR);
         }
     }
 
@@ -40,13 +42,13 @@ public class AuthController {
     public ResponseEntity<ApiResponse<AuthResponseDto>> login(@Valid @RequestBody AuthRequestDto request) {
         try {
             AuthResponseDto response = authService.login(request);
-            return okResponse(response, "Login successful");
+            return okResponse(response, AuthMessages.LOGIN_SUCCESSFUL);
         } catch (AuthenticationException e) {
-            return errorResponse(HttpStatus.UNAUTHORIZED, "Invalid credentials or unauthorized access");
+            return errorResponse(HttpStatus.UNAUTHORIZED, AuthMessages.INVALID_CREDENTIALS);
         } catch (RuntimeException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
-            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, "An unexpected error occurred: " + e.getMessage());
+            return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, GeneralMessages.UNEXPECTED_ERROR);
         }
     }
 
@@ -63,7 +65,7 @@ public class AuthController {
         return ResponseEntity.status(status.value()).body(ApiResponse.<T>builder()
                 .timestamp(LocalDateTime.now())
                 .status(status.value())
-                .message("Error")
+                .message(GeneralMessages.ERROR)
                 .error(errorMsg)
                 .build());
     }
