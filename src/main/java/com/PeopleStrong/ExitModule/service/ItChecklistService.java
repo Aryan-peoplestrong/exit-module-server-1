@@ -14,6 +14,8 @@ import com.PeopleStrong.ExitModule.repository.AuditLogRepository;
 import com.PeopleStrong.ExitModule.repository.EmployeeRepository;
 import com.PeopleStrong.ExitModule.repository.ExitRequestRepository;
 import com.PeopleStrong.ExitModule.repository.ItChecklistRepository;
+import com.PeopleStrong.ExitModule.common.ChecklistMessages;
+import com.PeopleStrong.ExitModule.common.ChecklistExceptionMessages;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -45,16 +47,16 @@ public class ItChecklistService {
     public ItChecklistDto uploadDocument(String employeeEmail, Long requestId, MultipartFile file) {
         Employee employee = employeeRepository.findByEmail(employeeEmail).get();
         ExitRequest exitRequest = exitRequestRepository.findById(requestId)
-                .orElseThrow(() -> new ResourceNotFoundException("Exit Request not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.EXIT_REQUEST_NOT_FOUND));
 
         if (!exitRequest.getEmployee().getEmpId().equals(employee.getEmpId())) {
-            throw new InvalidStateTransitionException("Not your request");
+            throw new InvalidStateTransitionException(ChecklistExceptionMessages.NOT_YOUR_REQUEST);
         }
 
         ItChecklist activeChecklist = itChecklistRepository.findByExitRequest_RequestId(requestId).stream()
                 .filter(c -> c.getStatus() == ChecklistStatus.PENDING)
                 .findFirst()
-                .orElseThrow(() -> new InvalidStateTransitionException("No pending checklist found for upload"));
+                .orElseThrow(() -> new InvalidStateTransitionException(ChecklistExceptionMessages.NO_PENDING_CHECKLIST_FOR_UPLOAD));
 
         // Save file
         try {
@@ -69,7 +71,7 @@ public class ItChecklistService {
 
             return mapToDto(activeChecklist);
         } catch (IOException e) {
-            throw new RuntimeException("Failed to store file", e);
+            throw new RuntimeException(ChecklistExceptionMessages.FILE_STORE_FAILED, e);
         }
     }
 
@@ -82,10 +84,10 @@ public class ItChecklistService {
     public ItChecklistDto itApprove(String itEmail, Long checklistId) {
         Employee itUser = employeeRepository.findByEmail(itEmail).get();
         ItChecklist checklist = itChecklistRepository.findById(checklistId)
-                .orElseThrow(() -> new ResourceNotFoundException("Checklist not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.CHECKLIST_NOT_FOUND));
 
         if (checklist.getStatus() != ChecklistStatus.PENDING) {
-            throw new InvalidStateTransitionException("Checklist is not pending");
+            throw new InvalidStateTransitionException(ChecklistExceptionMessages.CHECKLIST_NOT_PENDING);
         }
 
         checklist.setIdCardReceived(true);
@@ -98,7 +100,7 @@ public class ItChecklistService {
         exitRequest.setStatus(RequestStatus.SUCCESS);
         exitRequestRepository.save(exitRequest);
 
-        logAudit(exitRequest, itUser, "APPROVED_IT", "IT completed clearance. Exit successful.");
+        logAudit(exitRequest, itUser, ChecklistMessages.AUDIT_ACTION_APPROVED_IT, ChecklistMessages.AUDIT_COMMENT_APPROVED_IT);
         return mapToDto(checklist);
     }
 
@@ -106,17 +108,17 @@ public class ItChecklistService {
     public ItChecklistDto itReject(String itEmail, Long checklistId, ApprovalRequestDto approval) {
         Employee itUser = employeeRepository.findByEmail(itEmail).get();
         ItChecklist checklist = itChecklistRepository.findById(checklistId)
-                .orElseThrow(() -> new ResourceNotFoundException("Checklist not found"));
+                .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.CHECKLIST_NOT_FOUND));
 
         if (checklist.getStatus() != ChecklistStatus.PENDING) {
-            throw new InvalidStateTransitionException("Checklist is not pending");
+            throw new InvalidStateTransitionException(ChecklistExceptionMessages.CHECKLIST_NOT_PENDING);
         }
 
         checklist.setStatus(ChecklistStatus.REJECTED);
         itChecklistRepository.save(checklist);
 
         ExitRequest exitRequest = checklist.getExitRequest();
-        logAudit(exitRequest, itUser, "REJECTED_IT", approval.getComments());
+        logAudit(exitRequest, itUser, ChecklistMessages.AUDIT_ACTION_REJECTED_IT, approval.getComments());
 
         // Create next iteration
         ItChecklist nextIteration = ItChecklist.builder()

@@ -4,6 +4,7 @@ import com.PeopleStrong.ExitModule.model.Employee;
 import com.PeopleStrong.ExitModule.dto.AuthRequestDto;
 import com.PeopleStrong.ExitModule.dto.AuthResponseDto;
 import com.PeopleStrong.ExitModule.dto.SignupRequestDto;
+import com.PeopleStrong.ExitModule.common.AuthExceptionMessages;
 import com.PeopleStrong.ExitModule.repository.EmployeeRepository;
 import com.PeopleStrong.ExitModule.security.JwtUtils;
 import lombok.RequiredArgsConstructor;
@@ -26,19 +27,19 @@ public class AuthService {
     @Transactional
     public AuthResponseDto signup(SignupRequestDto request) {
         if (employeeRepository.findByEmail(request.getEmail()).isPresent()) {
-            throw new RuntimeException("Email is already in use");
+            throw new RuntimeException(AuthExceptionMessages.EMAIL_ALREADY_IN_USE);
         }
 
         Employee l1Manager = null;
         if (request.getL1ManagerId() != null) {
             l1Manager = employeeRepository.findById(request.getL1ManagerId())
-                    .orElseThrow(() -> new RuntimeException("L1 Manager not found"));
+                    .orElseThrow(() -> new RuntimeException(AuthExceptionMessages.L1_MANAGER_NOT_FOUND));
         }
 
         Employee hrManager = null;
         if (request.getHrManagerId() != null) {
             hrManager = employeeRepository.findById(request.getHrManagerId())
-                    .orElseThrow(() -> new RuntimeException("HR Manager not found"));
+                    .orElseThrow(() -> new RuntimeException(AuthExceptionMessages.HR_MANAGER_NOT_FOUND));
         }
 
         Employee employee = Employee.builder()
