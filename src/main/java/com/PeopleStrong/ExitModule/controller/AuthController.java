@@ -9,6 +9,7 @@ import com.PeopleStrong.ExitModule.dto.SignupRequestDto;
 import com.PeopleStrong.ExitModule.service.AuthService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.AuthenticationException;
@@ -22,32 +23,42 @@ import java.time.LocalDateTime;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
+@Slf4j
 public class AuthController {
 
     private final AuthService authService;
 
     @PostMapping("/signup")
     public ResponseEntity<ApiResponse<AuthResponseDto>> signup(@Valid @RequestBody SignupRequestDto request) {
+        log.info("Signup request received for email: {}", request.getEmail());
         try {
             AuthResponseDto response = authService.signup(request);
+            log.info("Signup successful for email: {}", request.getEmail());
             return okResponse(response, AuthMessages.USER_REGISTERED_SUCCESSFULLY);
         } catch (RuntimeException e) {
+            log.warn("Signup failed for email: {} - {}", request.getEmail(), e.getMessage());
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
+            log.error("Unexpected error during signup for email: {}", request.getEmail(), e);
             return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, GeneralMessages.UNEXPECTED_ERROR);
         }
     }
 
     @PostMapping("/login")
     public ResponseEntity<ApiResponse<AuthResponseDto>> login(@Valid @RequestBody AuthRequestDto request) {
+        log.info("Login request received for email: {}", request.getEmail());
         try {
             AuthResponseDto response = authService.login(request);
+            log.info("Login successful for email: {}", request.getEmail());
             return okResponse(response, AuthMessages.LOGIN_SUCCESSFUL);
         } catch (AuthenticationException e) {
+            log.warn("Login failed - invalid credentials for email: {}", request.getEmail());
             return errorResponse(HttpStatus.UNAUTHORIZED, AuthMessages.INVALID_CREDENTIALS);
         } catch (RuntimeException e) {
+            log.warn("Login failed for email: {} - {}", request.getEmail(), e.getMessage());
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         } catch (Exception e) {
+            log.error("Unexpected error during login for email: {}", request.getEmail(), e);
             return errorResponse(HttpStatus.INTERNAL_SERVER_ERROR, GeneralMessages.UNEXPECTED_ERROR);
         }
     }

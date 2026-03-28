@@ -17,6 +17,7 @@ import com.PeopleStrong.ExitModule.repository.ItChecklistRepository;
 import com.PeopleStrong.ExitModule.common.ChecklistMessages;
 import com.PeopleStrong.ExitModule.common.ChecklistExceptionMessages;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +34,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ItChecklistService {
 
     private final ItChecklistRepository itChecklistRepository;
@@ -45,11 +47,13 @@ public class ItChecklistService {
 
     @Transactional
     public ItChecklistDto uploadDocument(String employeeEmail, Long requestId, MultipartFile file) {
+        log.info("Processing document upload for requestId: {} by user: {}", requestId, employeeEmail);
         Employee employee = employeeRepository.findByEmail(employeeEmail).get();
         ExitRequest exitRequest = exitRequestRepository.findById(requestId)
                 .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.EXIT_REQUEST_NOT_FOUND));
 
         if (!exitRequest.getEmployee().getEmpId().equals(employee.getEmpId())) {
+            log.warn("Upload denied - user {} does not own requestId: {}", employeeEmail, requestId);
             throw new InvalidStateTransitionException(ChecklistExceptionMessages.NOT_YOUR_REQUEST);
         }
 
@@ -68,20 +72,24 @@ public class ItChecklistService {
             Files.copy(file.getInputStream(), path, StandardCopyOption.REPLACE_EXISTING);
             activeChecklist.setDocumentPath(path.toString());
             itChecklistRepository.save(activeChecklist);
+            log.info("Document uploaded successfully: {} for checklistId: {}", filename, activeChecklist.getChecklistId());
 
             return mapToDto(activeChecklist);
         } catch (IOException e) {
+            log.error("Failed to store file for requestId: {} - {}", requestId, e.getMessage(), e);
             throw new RuntimeException(ChecklistExceptionMessages.FILE_STORE_FAILED, e);
         }
     }
 
     public List<ItChecklistDto> getPendingChecklists() {
+        log.debug("Fetching pending IT checklists");
         return itChecklistRepository.findByStatus(ChecklistStatus.PENDING)
                 .stream().map(this::mapToDto).collect(Collectors.toList());
     }
 
     @Transactional
     public ItChecklistDto itApprove(String itEmail, Long checklistId) {
+        log.info("IT approving checklistId: {} by user: {}", checklistId, itEmail);
         Employee itUser = employeeRepository.findByEmail(itEmail).get();
         ItChecklist checklist = itChecklistRepository.findById(checklistId)
                 .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.CHECKLIST_NOT_FOUND));
@@ -99,6 +107,7 @@ public class ItChecklistService {
         ExitRequest exitRequest = checklist.getExitRequest();
         exitRequest.setStatus(RequestStatus.SUCCESS);
         exitRequestRepository.save(exitRequest);
+        log.info("IT clearance approved for checklistId: {}, exit request {} marked SUCCESS", checklistId, exitRequest.getRequestId());
 
         logAudit(exitRequest, itUser, ChecklistMessages.AUDIT_ACTION_APPROVED_IT, ChecklistMessages.AUDIT_COMMENT_APPROVED_IT);
         return mapToDto(checklist);
@@ -106,6 +115,7 @@ public class ItChecklistService {
 
     @Transactional
     public ItChecklistDto itReject(String itEmail, Long checklistId, ApprovalRequestDto approval) {
+        log.info("IT rejecting checklistId: {} by user: {}", checklistId, itEmail);
         Employee itUser = employeeRepository.findByEmail(itEmail).get();
         ItChecklist checklist = itChecklistRepository.findById(checklistId)
                 .orElseThrow(() -> new ResourceNotFoundException(ChecklistExceptionMessages.CHECKLIST_NOT_FOUND));
@@ -127,6 +137,7 @@ public class ItChecklistService {
                 .status(ChecklistStatus.PENDING)
                 .build();
         itChecklistRepository.save(nextIteration);
+        log.info("IT checklist rejected for checklistId: {}, new iteration {} created", checklistId, nextIteration.getIteration());
 
         return mapToDto(checklist);
     }
@@ -152,5 +163,6 @@ public class ItChecklistService {
                 .comments(comments)
                 .build();
         auditLogRepository.save(auditLog);
+        log.debug("Audit log saved: requestId={}, action={}, actorId={}", request.getRequestId(), action, actor.getEmpId());
     }
 }
